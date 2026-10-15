@@ -12,7 +12,8 @@
       "gist.githubusercontent.com",
       "raw.githubusercontent.com",
       "nominatim.openstreetmap.org",
-      "api.aladhan.com"
+      "api.aladhan.com",
+      "*.supabase.co"
     ]
   }
 }
