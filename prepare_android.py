@@ -63,6 +63,10 @@ def prepare_web():
     shutil.rmtree('www', ignore_errors=True)
     os.makedirs(os.path.join('www', 'pdfjs'))
     shutil.copy('index.html', os.path.join('www', 'index.html'))
+    if os.path.isfile('supabase-config.js'):
+        shutil.copy('supabase-config.js', os.path.join('www', 'supabase-config.js'))
+    else:
+        print('WARNING: supabase-config.js is missing - online sharing will not work')
 
     ok = False
     for base in PDFJS_SOURCES:
@@ -201,6 +205,21 @@ def patch_manifest():
     for perm in ('android.permission.ACCESS_COARSE_LOCATION', 'android.permission.ACCESS_FINE_LOCATION'):
         if perm not in text:
             add.append('    <uses-permission android:name="%s" />' % perm)
+    for perm in ('android.permission.POST_NOTIFICATIONS', 'android.permission.FOREGROUND_SERVICE',
+                 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'android.permission.WAKE_LOCK',
+                 'android.permission.RECEIVE_BOOT_COMPLETED'):
+        if perm not in text:
+            add.append('    <uses-permission android:name="%s" />' % perm)
+    if 'AdhanService' not in text and '</application>' in text:
+        comp = ('        <service android:name=".AdhanService" android:exported="false" '
+                'android:foregroundServiceType="mediaPlayback" />\n'
+                '        <receiver android:name=".AdhanReceiver" android:exported="true">\n'
+                '            <intent-filter>\n'
+                '                <action android:name="android.intent.action.BOOT_COMPLETED" />\n'
+                '                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n'
+                '            </intent-filter>\n'
+                '        </receiver>\n')
+        text = text.replace('</application>', comp + '    </application>')
     if 'android.hardware.location.gps' not in text:
         add.append('    <uses-feature android:name="android.hardware.location.gps" android:required="false" />')
     if add and '</manifest>' in text:
@@ -225,7 +244,28 @@ def patch_version():
     print('versionCode =', run)
 
 
+def install_native():
+    """native adhan alarm: Java files + MainActivity that registers the plugin"""
+    src = os.path.join(ROOT, 'native')
+    pkg = 'com.parsagames.amiralmomenincalendar'
+    dest = os.path.join('android', 'app', 'src', 'main', 'java', *pkg.split('.'))
+    if not os.path.isdir(src) or not os.path.isdir(os.path.join('android', 'app', 'src', 'main')):
+        print('WARNING: native adhan files skipped')
+        return
+    os.makedirs(dest, exist_ok=True)
+    for f in glob.glob(os.path.join(src, '*.java')):
+        shutil.copy(f, dest)
+    with open(os.path.join(dest, 'MainActivity.java'), 'w', encoding='utf-8') as f:
+        f.write('package %s;\n\nimport android.os.Bundle;\nimport com.getcapacitor.BridgeActivity;\n\n'
+                'public class MainActivity extends BridgeActivity {\n'
+                '    @Override\n    public void onCreate(Bundle savedInstanceState) {\n'
+                '        registerPlugin(AdhanPlugin.class);\n'
+                '        super.onCreate(savedInstanceState);\n    }\n}\n' % pkg)
+    print('native adhan files installed in', dest)
+
+
 def prepare_android():
+    install_native()
     master = build_icon_master()
     if master is not None:
         make_icons(master)
